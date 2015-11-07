@@ -1,7 +1,5 @@
-(define (domain cell-assembly-eachparts)
-  (:requirements :strips :typing
-                 :negative-preconditions
-                 :action-costs)
+(define (domain cell-assembly-eachparts-noneg)
+  (:requirements :strips :typing :action-costs)
   (:types arm
 	  position
 	  holdable
@@ -31,12 +29,13 @@
    (uses ?job - job ?component - component)
    ;; state description
    (at ?obj - object ?pos - position)
-   (arm-present ?pos - reachable)
-   (base-present ?pos - position)
+   (not-arm-present ?pos - reachable)
+   (not-base-present ?pos - position)
    (hold ?arm - arm ?holdable - holdable)
    (free ?arm - arm)
    (component-base ?component - component ?base - base)
-   (finished ?job - job ?base - base))
+   (finished ?job - job ?base - base)
+   (not-finished ?job - job ?base - base))
   (:functions
    (total-cost)
    (loading-cost)        ; the cost to set and eject base
@@ -49,28 +48,28 @@
            ;; time.
 	   :parameters (?arm - arm ?from ?to - reachable)
 	   :precondition (and (at ?arm ?from)
-			      (not (arm-present ?to))
+			      (not-arm-present ?to)
 			      (free ?arm)
 			      (is-reachable ?arm ?to))
 	   :effect (and (at ?arm ?to)
-			(arm-present ?to)
+			(not (not-arm-present ?to))
 			(not (at ?arm ?from))
-			(not (arm-present ?from))
-			(increase (total-cost) (move-cost ?from ?to))))
+			(not-arm-present ?from)
+                        (increase (total-cost) (move-cost ?from ?to))))
   (:action move-arm-holding
            ;; Same as move-arm, but assumes the arm is holding something.
 	   :parameters (?arm - arm
                         ?from ?to - reachable
                         ?thing - holdable)
 	   :precondition (and (at ?arm ?from)
-			      (not (arm-present ?to))
+			      (not-arm-present ?to)
 			      (hold ?arm ?thing)
 			      (is-reachable ?arm ?to))
 	   :effect (and (at ?arm ?to)
-			(arm-present ?to)
+			(not (not-arm-present ?to))
 			(not (at ?arm ?from))
-			(not (arm-present ?from))
-			(increase (total-cost) (move-cost ?from ?to))))
+			(not-arm-present ?from)
+                        (increase (total-cost) (move-cost ?from ?to))))
   (:action eject-base
            ;; Eject Base: Uses an arm (?arm) to grasp and pick up a base (?base)
            ;; from a machine or a table (?pos). Resets the mutual exclusion
@@ -81,9 +80,9 @@
 			      (free ?arm))
 	   :effect (and (hold ?arm ?base)
 			(not (free ?arm))
-			(not (base-present ?pos))
+			(not-base-present ?pos)
 			(not (at ?base ?pos))
-			(increase (total-cost) (loading-cost))))
+                        (increase (total-cost) (loading-cost))))
   (:action set-base
            ;; Set Base: Commands an arm (?arm) that is holding a
            ;; particular base (?base) to set the base on a machine or
@@ -92,12 +91,12 @@
 	   :parameters (?base - base ?arm - arm ?pos - table)
 	   :precondition (and (hold ?arm ?base)
 			      (at ?arm ?pos)
-			      (not (base-present ?pos)))
+			      (not-base-present ?pos))
 	   :effect (and (at ?base ?pos)
 			(free ?arm)
 			(not (hold ?arm ?base))
-			(base-present ?pos)
-			(increase (total-cost) (loading-cost))))
+			(not (not-base-present ?pos))
+                        (increase (total-cost) (loading-cost))))
   (:action slide-base-in
            ;; Slide Base: Uses a slide device to move a base.
            ;; CARRY-IN device only.
@@ -105,11 +104,11 @@
 	   :parameters (?base - base ?from - conveyor ?to - table)
 	   :precondition (and (at ?base ?from)
 			      (connected ?from ?to)
-			      (not (base-present ?to)))
+			      (not-base-present ?to))
 	   :effect (and (at ?base ?to)
 			(not (at ?base ?from))
-			(base-present ?to)
-			(increase (total-cost) (loading-cost))))
+			(not (not-base-present ?to))
+                        (increase (total-cost) (loading-cost))))
   (:action slide-base-out
            ;; Slide Base: Uses a slide device to move a base. 
            ;; CARRY-OUT device only.
@@ -120,8 +119,8 @@
 			      (connected ?from ?to))
 	   :effect (and (at ?base ?to)
 			(not (at ?base ?from))
-			(not (base-present ?from))
-			(increase (total-cost) (loading-cost))))
+			(not-base-present ?from)
+                        (increase (total-cost) (loading-cost))))
   (:action pickup-component
            ;; Use an arm (?arm) to pick up a part (?part). The part will later be
            ;; used by assemble-with-arm.  NOTE: We assume there are unlimited
@@ -134,7 +133,7 @@
 			      (at ?component ?pos))
 	   :effect (and (hold ?arm ?component)
 			(not (free ?arm))
-			(increase (total-cost) (loading-cost))))
+                        (increase (total-cost) (loading-cost))))
   (:action assemble-with-machine
            ;; Use a machine (?pos) to perform an assembly operation (e.g.,
            ;; tighten the screw, paint the base etc) on a base (?base).
@@ -151,14 +150,14 @@
 	   :precondition (and ;; machine specification
 			  (job-available-at ?job ?machine)
 			  ;; state specification
-			  (not (finished ?job ?base))
 			  (at ?base ?machine)
 			  ;; job dependency specification (linear)
 			  (depends ?prev-job ?job)
 			  (finished ?prev-job ?base)
-                          (not (finished ?job ?base)))
+			  (not-finished ?job ?base))
 	   :effect (and (finished ?job ?base)
-			(increase (total-cost) (job-cost ?job))))
+                        (not (not-finished ?job ?base))
+                        (increase (total-cost) (job-cost ?job))))
   (:action assemble-with-arm
            ;; Uses an arm (?arm) to attach a part (?component) to a base.  This
            ;; operation should be done on a table.
@@ -177,10 +176,11 @@
 			  (at ?base ?pos)
 			  ;; job dependency specification (linear)
 			  (depends ?prev-job ?job)
-			  (finished ?prev-job ?base)
-                          (not (finished ?job ?base)))
-           :effect (and (finished ?job ?base)
+                          (finished ?prev-job ?base)
+			  (not-finished ?job ?base))
+	   :effect (and (finished ?job ?base)
+			(not (not-finished ?job ?base))
                         (free ?arm)
-                        (not (hold ?arm ?component))
+			(not (hold ?arm ?component))
                         (increase (total-cost) (job-cost ?job)))))
 
